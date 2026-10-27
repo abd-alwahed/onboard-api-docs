@@ -885,10 +885,15 @@ function updateMarker(entry, name, status, p) {
 
   if (!entry.marker) {
     const el = document.createElement('div');
+    el.className = 'car';
     entry.popup = new maplibregl.Popup({ offset: 12, closeButton: false });
     entry.marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).setPopup(entry.popup).addTo(map);
   }
-  entry.marker.getElement().className = 'car ' + status;
+  // Only swap the status class. Never overwrite className: MapLibre adds its own
+  // `maplibregl-marker` class (position:absolute) to this element, and losing it makes markers drift on zoom.
+  const el = entry.marker.getElement();
+  el.classList.remove('online', 'parked', 'offline', 'unknown');
+  el.classList.add(['online', 'parked', 'offline'].includes(status) ? status : 'unknown');
   entry.marker.setLngLat(lngLat);
 
   const box = document.createElement('div'); // built with textContent: server text is never parsed as HTML
