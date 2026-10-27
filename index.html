@@ -1,0 +1,932 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onboard Live Vehicles API</title>
+<meta name="description" content="Onboard Live Vehicles API — integration guide (Login API + WebSocket).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Design tokens (light) ---------- */
+  :root {
+    --brand: #066b5e;
+    --brand-strong: #04554a;
+    --brand-soft: #e6f2ef;
+    --bg: #ffffff;
+    --bg-alt: #f6f8f7;
+    --surface: #ffffff;
+    --border: #dde5e2;
+    --text: #15201d;
+    --text-muted: #5b6b66;
+    --code-bg: #0f1a17;
+    --code-text: #d7e4e0;
+    --code-key: #7fd1c0;
+    --code-str: #f2c97d;
+    --code-num: #b5a8ff;
+    --code-com: #6f827c;
+    --post: #0b7a43;
+    --ws: #6d4bd8;
+    --online: #138a4a;
+    --parked: #2563c9;
+    --offline: #b2392f;
+    --unknown: #7a7f7d;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+    --radius: 10px;
+    --sidebar-w: 260px;
+    --font: "Inter", "IBM Plex Sans Arabic", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    color-scheme: light;
+  }
+  /* ---------- Dark mode ---------- */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --brand: #3fb59f; --brand-strong: #6fd0bd; --brand-soft: #143029;
+      --bg: #0d1412; --bg-alt: #111a17; --surface: #141e1b; --border: #24332e;
+      --text: #e3ece9; --text-muted: #93a6a0; --code-bg: #08100d;
+      --post: #3cc985; --ws: #a48cff;
+      --online: #3cc985; --parked: #6ea1ff; --offline: #f07a6e; --unknown: #9aa29f;
+      --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --brand: #3fb59f; --brand-strong: #6fd0bd; --brand-soft: #143029;
+    --bg: #0d1412; --bg-alt: #111a17; --surface: #141e1b; --border: #24332e;
+    --text: #e3ece9; --text-muted: #93a6a0; --code-bg: #08100d;
+    --post: #3cc985; --ws: #a48cff;
+    --online: #3cc985; --parked: #6ea1ff; --offline: #f07a6e; --unknown: #9aa29f;
+    --shadow: none; color-scheme: dark;
+  }
+
+  /* ---------- Language switching: show only the active language ---------- */
+  html[lang="ar"] [data-l="en"], html[lang="en"] [data-l="ar"] { display: none !important; }
+  html[lang="ar"] { --font: "IBM Plex Sans Arabic", "Inter", system-ui, sans-serif; }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.7 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand); }
+  code, pre, .mono { font-family: var(--mono); }
+  :not(pre) > code { background: var(--bg-alt); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; font-size: .86em; direction: ltr; unicode-bidi: isolate; }
+
+  /* ---------- Top bar ---------- */
+  .topbar { position: sticky; top: 0; z-index: 30; height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 20px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
+  .logo-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--brand); color: #fff; display: grid; place-items: center; font-size: 15px; }
+  .logo small { font-weight: 500; color: var(--text-muted); }
+  .badge-ver { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--brand-soft); color: var(--brand-strong); font-weight: 600; }
+  .spacer { flex: 1; }
+  .btn { font: inherit; font-size: 14px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { border-color: var(--brand); }
+  .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn-primary:hover { background: var(--brand-strong); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .menu-btn { display: none; }
+
+  /* ---------- Layout ---------- */
+  .layout { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+  .sidebar { position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto; padding: 24px 16px; border-inline-end: 1px solid var(--border); }
+  .sidebar h4 { margin: 18px 10px 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+  .sidebar a { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 7px; color: var(--text); text-decoration: none; font-size: 14px; }
+  .sidebar a:hover { background: var(--bg-alt); }
+  .sidebar a.active { background: var(--brand-soft); color: var(--brand-strong); font-weight: 600; }
+  .sidebar a.sub { padding-inline-start: 26px; font-size: 13px; color: var(--text-muted); }
+  .sidebar a.sub.active { color: var(--brand-strong); }
+  main { padding: 32px 48px 80px; min-width: 0; }
+  section { max-width: 860px; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: 0; }
+
+  h1 { font-size: 34px; line-height: 1.25; margin: 4px 0 12px; letter-spacing: -.01em; }
+  h2 { font-size: 24px; margin: 8px 0 12px; }
+  h3 { font-size: 17px; margin: 26px 0 10px; }
+  p { margin: 0 0 12px; }
+  .lead { font-size: 17px; color: var(--text-muted); }
+
+  .hero { background: linear-gradient(135deg, var(--brand-soft), transparent 70%); border: 1px solid var(--border); border-radius: 16px; padding: 32px; }
+  .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .step b { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 13px; margin-inline-end: 8px; }
+
+  /* ---------- Callouts ---------- */
+  .callout { display: flex; gap: 12px; padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-alt); margin: 14px 0; }
+  .callout .ic { font-size: 18px; line-height: 1.5; }
+  .callout.info { border-color: color-mix(in srgb, var(--brand) 35%, var(--border)); background: var(--brand-soft); }
+  .callout.warn { border-color: #e7c27a; background: color-mix(in srgb, #f5d27a 18%, var(--bg)); }
+  .callout p:last-child { margin: 0; }
+
+  /* ---------- Endpoint line ---------- */
+  .endpoint { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); direction: ltr; margin: 12px 0; }
+  .method { font: 700 12px var(--mono); padding: 3px 8px; border-radius: 6px; color: #fff; }
+  .method.post { background: var(--post); }
+  .method.ws { background: var(--ws); }
+  .endpoint code.url { background: none; border: 0; padding: 0; font-size: 14px; word-break: break-all; flex: 1; }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); margin: 10px 0 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: start; background: var(--bg-alt); color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child code { color: var(--brand-strong); font-weight: 500; }
+  .type { font: 12px var(--mono); color: var(--text-muted); white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+  .req { font-size: 12px; font-weight: 600; color: var(--offline); }
+
+  /* ---------- Status pill ---------- */
+  .pill { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--mono); padding: 2px 9px; border-radius: 99px; border: 1px solid currentColor; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.online { color: var(--online); } .pill.parked { color: var(--parked); }
+  .pill.offline { color: var(--offline); } .pill.unknown { color: var(--unknown); }
+
+  /* ---------- Code blocks with tabs ---------- */
+  .code { border-radius: var(--radius); overflow: hidden; background: var(--code-bg); margin: 12px 0 18px; direction: ltr; border: 1px solid #1f2d29; }
+  .code-head { display: flex; align-items: center; gap: 2px; padding: 6px 8px; background: #16231f; border-bottom: 1px solid #22332e; }
+  .code-head .tab { font: 500 12px var(--mono); color: #8fa59f; background: none; border: 0; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+  .code-head .tab.active { color: #fff; background: #24372f; }
+  .code-head .label { font: 500 12px var(--mono); color: #8fa59f; padding: 5px 6px; }
+  .code-head .copy { margin-left: auto; font: 500 12px var(--font); color: #b9ccc6; background: none; border: 1px solid #2c403a; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+  .code-head .copy:hover { color: #fff; border-color: #4b6b62; }
+  pre { margin: 0; padding: 16px 18px; overflow-x: auto; color: var(--code-text); font-size: 13px; line-height: 1.65; tab-size: 2; }
+  .tok-k { color: var(--code-key); } .tok-s { color: var(--code-str); } .tok-n { color: var(--code-num); } .tok-c { color: var(--code-com); font-style: italic; }
+
+  /* ---------- Playground ---------- */
+  .pg { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+  .pg-step { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .pg-step h3 { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .pg-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+  .pg-grid.two { grid-template-columns: 1fr auto auto; }
+  label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+  input { width: 100%; font: 14px var(--mono); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); direction: ltr; }
+  input:focus { outline: 2px solid color-mix(in srgb, var(--brand) 40%, transparent); border-color: var(--brand); }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+  .conn i { width: 9px; height: 9px; border-radius: 50%; background: var(--unknown); }
+  .conn.on i { background: var(--online); box-shadow: 0 0 0 4px color-mix(in srgb, var(--online) 25%, transparent); }
+  .conn.err i { background: var(--offline); }
+  .pg-msg { font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .pg-msg.err { color: var(--offline); } .pg-msg.ok { color: var(--online); }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--bg-alt); }
+  .stat { flex: 1; min-width: 110px; padding: 10px 12px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border); }
+  .stat span { display: block; font-size: 12px; color: var(--text-muted); }
+  .stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .pg-panes { display: grid; grid-template-columns: 1.3fr 1fr; min-height: 300px; }
+  .pg-panes > div { min-width: 0; }
+  .pg-table { max-height: 380px; overflow: auto; border-inline-end: 1px solid var(--border); }
+  .pg-table table td, .pg-table table th { padding: 8px 12px; }
+  .pg-table td.num { font: 12px var(--mono); direction: ltr; text-align: start; }
+  .pg-table tr.flash td { animation: flash 1s ease-out; }
+  @keyframes flash { from { background: var(--brand-soft); } to { background: transparent; } }
+  .pg-log { max-height: 380px; overflow: auto; background: var(--code-bg); color: var(--code-text); font: 12px/1.55 var(--mono); padding: 10px 12px; direction: ltr; }
+  .pg-log div { white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid #1c2a26; padding: 4px 0; }
+  .pg-log .t { color: var(--code-com); }
+  .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
+
+  footer { color: var(--text-muted); font-size: 13px; padding-top: 10px; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 960px) {
+    main { padding: 24px 16px 60px; }
+    .layout { grid-template-columns: 1fr; }
+    .menu-btn { display: inline-flex; }
+    .sidebar { position: fixed; inset-inline-start: 0; top: 60px; width: 280px; z-index: 25; background: var(--bg); transform: translateX(-105%); transition: transform .2s; box-shadow: var(--shadow); }
+    html[dir="rtl"] .sidebar { transform: translateX(105%); }
+    body.nav-open .sidebar { transform: none; }
+    .pg-panes { grid-template-columns: 1fr; }
+    .pg-table { border-inline-end: 0; border-bottom: 1px solid var(--border); }
+  }
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+    .hero { padding: 20px; }
+    .steps, .pg-grid, .pg-grid.two { grid-template-columns: 1fr; }
+    .logo small, .badge-ver { display: none; }
+    .topbar { padding: 0 12px; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <button class="btn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+  <a class="logo" href="#intro">
+    <span class="logo-mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 7a8 8 0 1 0 11.4 0"/></svg></span>
+    <span>Onboard <small>Live Vehicles API</small></span>
+  </a>
+  <span class="badge-ver">v1.0</span>
+  <span class="spacer"></span>
+  <button class="btn" id="themeBtn" aria-label="Theme">◐</button>
+  <button class="btn" id="langBtn"><span data-l="ar">English</span><span data-l="en">العربية</span></button>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <h4><span data-l="en">Getting started</span><span data-l="ar">البداية</span></h4>
+    <a href="#intro"><span data-l="en">Introduction</span><span data-l="ar">مقدمة</span></a>
+    <a href="#credentials"><span data-l="en">Getting credentials</span><span data-l="ar">الحصول على حساب</span></a>
+
+    <h4><span data-l="en">API reference</span><span data-l="ar">مرجع الواجهة</span></h4>
+    <a href="#login"><bdi dir="ltr">1. Login API</bdi></a>
+    <a class="sub" href="#login-request"><span data-l="en">Request</span><span data-l="ar">الطلب</span></a>
+    <a class="sub" href="#login-response"><span data-l="en">Response</span><span data-l="ar">الاستجابة</span></a>
+    <a href="#websocket"><bdi dir="ltr">2. Live Vehicles WebSocket</bdi></a>
+    <a class="sub" href="#ws-url"><span data-l="en">Connection URL</span><span data-l="ar">رابط الاتصال</span></a>
+    <a class="sub" href="#ws-message"><span data-l="en">Message format</span><span data-l="ar">شكل الرسالة</span></a>
+    <a class="sub" href="#ws-position"><bdi dir="ltr">2.1 position</bdi></a>
+    <a class="sub" href="#ws-device"><bdi dir="ltr">2.2 device</bdi></a>
+    <a class="sub" href="#ws-status"><bdi dir="ltr">2.3 status</bdi></a>
+    <a href="#errors"><span data-l="en">Errors &amp; close codes</span><span data-l="ar">الأخطاء وأكواد الإغلاق</span></a>
+
+    <h4><span data-l="en">Build</span><span data-l="ar">التطبيق</span></h4>
+    <a href="#examples"><span data-l="en">Full examples</span><span data-l="ar">أمثلة كاملة</span></a>
+    <a href="#playground"><span data-l="en">Live Playground</span><span data-l="ar">التجربة المباشرة</span></a>
+  </nav>
+
+  <main>
+    <!-- ================= INTRO ================= -->
+    <section id="intro">
+      <div class="hero">
+        <span class="badge-ver">Integration Guide · v1.0</span>
+        <h1>
+          <span data-l="en">Live Vehicles API</span>
+          <span data-l="ar">واجهة التتبع المباشر للمركبات</span>
+        </h1>
+        <p class="lead" data-l="en">Connect to the Onboard platform and receive the live location and status of your vehicles in real time.</p>
+        <p class="lead" data-l="ar">اربط نظامك مع منصة Onboard واستقبل الموقع والحالة المباشرة لمركباتك لحظة بلحظة.</p>
+        <div class="steps">
+          <div class="step">
+            <b>1</b><strong>Login API</strong>
+            <p data-l="en" style="margin:8px 0 0">Send email + password, get an access <code>token</code>.</p>
+            <p data-l="ar" style="margin:8px 0 0">أرسل البريد وكلمة المرور، واستلم <code>token</code>.</p>
+          </div>
+          <div class="step">
+            <b>2</b><strong>WebSocket</strong>
+            <p data-l="en" style="margin:8px 0 0">Open the socket with the token and receive vehicle updates continuously.</p>
+            <p data-l="ar" style="margin:8px 0 0">افتح اتصال WebSocket بالتوكن واستقبل تحديثات المركبات بشكل مستمر.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CREDENTIALS ================= -->
+    <section id="credentials">
+      <h2><span data-l="en">Getting credentials</span><span data-l="ar">الحصول على حساب</span></h2>
+      <div class="callout info">
+        <span class="ic">🔑</span>
+        <div>
+          <p data-l="en"><strong>You need a username (email) and password to use this API.</strong> They are issued by Onboard — contact the Onboard team and they will create an API account for you and send you its credentials.</p>
+          <p data-l="ar"><strong>لاستخدام هذه الواجهة تحتاج اسم مستخدم (email) وكلمة مرور.</strong> هذه البيانات تصدرها شركة Onboard — تواصل مع فريق Onboard وسيقومون بإنشاء حساب API خاص بك وإرسال بياناته إليك.</p>
+          <p><a href="https://onboardsaudi.com" target="_blank" rel="noopener">onboardsaudi.com</a></p>
+        </div>
+      </div>
+      <p data-l="en">In all the examples on this page, replace <code>YOUR_EMAIL</code> and <code>YOUR_PASSWORD</code> with the credentials you received.</p>
+      <p data-l="ar">في كل الأمثلة الموجودة بهذه الصفحة، استبدل <code>YOUR_EMAIL</code> و <code>YOUR_PASSWORD</code> بالبيانات التي استلمتها.</p>
+      <div class="callout warn">
+        <span class="ic">⚠️</span>
+        <p data-l="en">Keep your credentials and token on your server. Do not ship them inside a public website or mobile app.</p>
+        <p data-l="ar">احفظ بيانات الدخول والتوكن على السيرفر الخاص بك، ولا تضعها داخل موقع عام أو تطبيق جوال.</p>
+      </div>
+    </section>
+
+    <!-- ================= LOGIN ================= -->
+    <section id="login">
+      <h2><bdi dir="ltr">1. Login API</bdi></h2>
+      <p data-l="en">Sends the user's email and password and returns the access token used to open the WebSocket connection.</p>
+      <p data-l="ar">ترسل البريد الإلكتروني وكلمة المرور للمستخدم، وترجع التوكن (access token) الذي يُستخدم لفتح اتصال WebSocket.</p>
+
+      <div class="endpoint">
+        <span class="method post">POST</span>
+        <code class="url">https://my.onboardsaudi.com/backend/api/login</code>
+        <button class="btn" data-copy="https://my.onboardsaudi.com/backend/api/login"><span data-l="en">Copy</span><span data-l="ar">نسخ</span></button>
+      </div>
+
+      <h3 id="login-request"><span data-l="en">Request</span><span data-l="ar">الطلب</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Header</th><th><span data-l="en">Value</span><span data-l="ar">القيمة</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr>
+          <tr><td><code>Accept</code></td><td><code>application/json</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th><span data-l="en">Body field</span><span data-l="ar">الحقل</span></th>
+          <th><span data-l="en">Type</span><span data-l="ar">النوع</span></th>
+          <th><span data-l="en">Required</span><span data-l="ar">إلزامي</span></th>
+          <th><span data-l="en">Description</span><span data-l="ar">الوصف</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><code>email</code></td><td class="type">string</td><td class="req"><span data-l="en">Yes</span><span data-l="ar">نعم</span></td>
+            <td><span data-l="en">The user's email / username.</span><span data-l="ar">البريد الإلكتروني أو اسم المستخدم.</span></td></tr>
+          <tr><td><code>password</code></td><td class="type">string</td><td class="req"><span data-l="en">Yes</span><span data-l="ar">نعم</span></td>
+            <td><span data-l="en">The user's password.</span><span data-l="ar">كلمة المرور.</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="code" data-tabs="login"></div>
+
+      <h3 id="login-response"><span data-l="en">Response</span><span data-l="ar">الاستجابة</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th><span data-l="en">Field</span><span data-l="ar">الحقل</span></th>
+          <th><span data-l="en">Type</span><span data-l="ar">النوع</span></th>
+          <th><span data-l="en">Description</span><span data-l="ar">الوصف</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><code>result</code></td><td class="type">string</td>
+            <td><span data-l="en"><code>"success"</code> if the login is correct, <code>"error"</code> if not.</span><span data-l="ar"><code>"success"</code> إذا كان الدخول صحيحاً، و <code>"error"</code> إذا لم يكن.</span></td></tr>
+          <tr><td><code>data.token</code></td><td class="type">string</td>
+            <td><span data-l="en">The access token. Use it as the <code>token</code> parameter of the <a href="#ws-url">WebSocket</a>.</span><span data-l="ar">التوكن. استخدمه كقيمة للبارامتر <code>token</code> في <a href="#ws-url">WebSocket</a>.</span></td></tr>
+          <tr><td><code>data.expires_in</code></td><td class="type">integer</td>
+            <td><span data-l="en">Token validity in seconds (<code>31535999</code> ≈ one year). After it expires, log in again.</span><span data-l="ar">مدة صلاحية التوكن بالثواني (<code>31535999</code> ≈ سنة). بعد انتهائها سجّل الدخول من جديد.</span></td></tr>
+          <tr><td><code>data.user.id</code></td><td class="type">integer</td>
+            <td><span data-l="en">ID of the logged-in user.</span><span data-l="ar">رقم المستخدم.</span></td></tr>
+          <tr><td><code>data.user.name</code></td><td class="type">string</td>
+            <td><span data-l="en">Name of the user / account.</span><span data-l="ar">اسم المستخدم أو الحساب.</span></td></tr>
+          <tr><td><code>data.user.email</code></td><td class="type">string</td>
+            <td><span data-l="en">Email of the user.</span><span data-l="ar">البريد الإلكتروني للمستخدم.</span></td></tr>
+          <tr><td><code>data.user.type</code></td><td class="type">integer</td>
+            <td><span data-l="en">Account type.</span><span data-l="ar">نوع الحساب.</span></td></tr>
+          <tr><td><code>error_description</code></td><td class="type">string</td>
+            <td><span data-l="en">Error message when <code>result = "error"</code>; empty on success.</span><span data-l="ar">رسالة الخطأ عندما تكون <code>result = "error"</code>، وفارغة عند النجاح.</span></td></tr>
+          <tr><td><code>error_code</code></td><td class="type">integer</td>
+            <td><span data-l="en"><code>0</code> on success; an error code otherwise.</span><span data-l="ar"><code>0</code> عند النجاح، وإلا كود الخطأ.</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="code" data-tabs="loginResponse"></div>
+    </section>
+
+    <!-- ================= WEBSOCKET ================= -->
+    <section id="websocket">
+      <h2><bdi dir="ltr">2. Live Vehicles WebSocket</bdi></h2>
+      <p data-l="en">After login, open a WebSocket connection with the token. The server pushes an update message every time a vehicle's position or status changes.</p>
+      <p data-l="ar">بعد تسجيل الدخول افتح اتصال WebSocket بالتوكن. السيرفر يرسل رسالة تحديث كلما تغيّر موقع أو حالة أي مركبة.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-l="en">Item</span><span data-l="ar">البند</span></th><th><span data-l="en">Value</span><span data-l="ar">القيمة</span></th></tr></thead>
+        <tbody>
+          <tr><td><span data-l="en">Protocol</span><span data-l="ar">البروتوكول</span></td><td><span data-l="en">WebSocket over TLS (<code>wss://</code>)</span><span data-l="ar">WebSocket مشفّر (<code>wss://</code>)</span></td></tr>
+          <tr><td>Host</td><td><code>my.onboardsaudi.com</code></td></tr>
+          <tr><td>Port</td><td><span data-l="en"><code>443</code> — the default HTTPS port, so it is not written in the URL</span><span data-l="ar"><code>443</code> — المنفذ الافتراضي لـ HTTPS لذلك لا يُكتب في الرابط</span></td></tr>
+          <tr><td>Path</td><td><span data-l="en"><code>/ws/</code> — keep the slash at the end</span><span data-l="ar"><code>/ws/</code> — مع الإبقاء على الشرطة في النهاية</span></td></tr>
+          <tr><td><span data-l="en">Authentication</span><span data-l="ar">المصادقة</span></td><td><span data-l="en"><code>token</code> query parameter — the token from the Login API</span><span data-l="ar">بارامتر <code>token</code> في الرابط — التوكن من Login API</span></td></tr>
+          <tr><td><span data-l="en">Message format</span><span data-l="ar">صيغة الرسائل</span></td><td>JSON (UTF-8 text)</td></tr>
+          <tr><td><span data-l="en">Direction</span><span data-l="ar">الاتجاه</span></td><td><span data-l="en">Server → client. The client does not need to send any message after connecting.</span><span data-l="ar">من السيرفر ← إلى العميل. لا يحتاج العميل لإرسال أي رسالة بعد الاتصال.</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="ws-url"><span data-l="en">Connection URL</span><span data-l="ar">رابط الاتصال</span></h3>
+      <div class="endpoint">
+        <span class="method ws">WSS</span>
+        <code class="url">wss://my.onboardsaudi.com/ws/?token=&lt;ACCESS_TOKEN&gt;</code>
+        <button class="btn" data-copy="wss://my.onboardsaudi.com/ws/?token=<ACCESS_TOKEN>"><span data-l="en">Copy</span><span data-l="ar">نسخ</span></button>
+      </div>
+      <p data-l="en">Replace <code>&lt;ACCESS_TOKEN&gt;</code> with <code>data.token</code> from the Login API. No request body and no headers are needed.</p>
+      <p data-l="ar">استبدل <code>&lt;ACCESS_TOKEN&gt;</code> بقيمة <code>data.token</code> من Login API. لا يوجد Body ولا Headers.</p>
+
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th><span data-l="en">Parameter</span><span data-l="ar">البارامتر</span></th>
+          <th><span data-l="en">Type</span><span data-l="ar">النوع</span></th>
+          <th><span data-l="en">Required</span><span data-l="ar">إلزامي</span></th>
+          <th><span data-l="en">Description</span><span data-l="ar">الوصف</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><code>token</code></td><td class="type">string</td><td class="req"><span data-l="en">Yes</span><span data-l="ar">نعم</span></td>
+            <td>
+              <span data-l="en">The access token returned by the Login API (<code>data.token</code>). The server uses it to identify the user and returns <strong>only the vehicles that user has permission to see</strong>. If the token is invalid or expired, the connection is closed with code <code>4401</code>.</span>
+              <span data-l="ar">التوكن الراجع من Login API (<code>data.token</code>). يستخدمه السيرفر لمعرفة المستخدم ويرجع <strong>فقط المركبات المسموح له برؤيتها</strong>. إذا كان التوكن غير صالح أو منتهي يُغلق الاتصال بالكود <code>4401</code>.</span>
+            </td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="ws-message"><span data-l="en">Message format</span><span data-l="ar">شكل الرسالة</span></h3>
+      <p data-l="en">Each message describes <strong>one vehicle</strong>. It has a <code>type</code> (<code>"update"</code>), a <code>position</code> object and a <code>device</code> object. Use <code>device.name</code> to match updates to the same vehicle.</p>
+      <p data-l="ar">كل رسالة تخص <strong>مركبة واحدة</strong>، وتحتوي <code>type</code> (قيمته <code>"update"</code>) وكائن <code>position</code> وكائن <code>device</code>. استخدم <code>device.name</code> لربط التحديثات بنفس المركبة.</p>
+      <div class="code" data-tabs="message"></div>
+
+      <h3 id="ws-position"><bdi dir="ltr">2.1 <code>position</code></bdi> — <span data-l="en">location of each vehicle</span><span data-l="ar">موقع المركبة</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-l="en">Field</span><span data-l="ar">الحقل</span></th><th><span data-l="en">Type</span><span data-l="ar">النوع</span></th><th><span data-l="en">Meaning</span><span data-l="ar">المعنى</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>latitude</code></td><td class="type">number</td>
+            <td><span data-l="en">Latitude in decimal degrees (WGS84, the standard GPS system). Example: <code>24.9748</code>.</span><span data-l="ar">خط العرض بالدرجات العشرية (WGS84 نظام GPS القياسي). مثال: <code>24.9748</code>.</span></td></tr>
+          <tr><td><code>longitude</code></td><td class="type">number</td>
+            <td><span data-l="en">Longitude in decimal degrees (WGS84). Example: <code>46.6950</code>.</span><span data-l="ar">خط الطول بالدرجات العشرية (WGS84). مثال: <code>46.6950</code>.</span></td></tr>
+          <tr><td><code>speed</code></td><td class="type">number</td>
+            <td><span data-l="en">Current speed as reported by the tracking device. <code>0</code> means the vehicle is not moving.</span><span data-l="ar">السرعة الحالية كما يرسلها جهاز التتبع. <code>0</code> تعني أن المركبة لا تتحرك.</span></td></tr>
+          <tr><td><code>ignition</code></td><td class="type">integer (0 / 1)</td>
+            <td><span data-l="en">Engine ignition (key) state. <code>1</code> = ON (engine running), <code>0</code> = OFF.</span><span data-l="ar">حالة تشغيل المحرك (المفتاح). <code>1</code> = يعمل، <code>0</code> = مطفأ.</span></td></tr>
+          <tr><td><code>motion</code></td><td class="type">integer (0 / 1)</td>
+            <td><span data-l="en">Whether the device detects movement. <code>1</code> = moving, <code>0</code> = stopped. A vehicle can have <code>ignition = 1</code> and <code>motion = 0</code> (engine on but standing still, e.g. at a traffic light).</span><span data-l="ar">هل يكتشف الجهاز أن المركبة تتحرك. <code>1</code> = تتحرك، <code>0</code> = متوقفة. ممكن تكون <code>ignition = 1</code> و <code>motion = 0</code> (المحرك يعمل لكن المركبة واقفة، مثلاً عند إشارة مرور).</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout info">
+        <span class="ic">📍</span>
+        <p data-l="en">Latitude and longitude are sent with very high precision. Rounding to 6 decimal places (about 10 cm) is enough for display.</p>
+        <p data-l="ar">الإحداثيات تُرسل بدقة عالية جداً (أرقام عشرية كثيرة). التقريب إلى 6 خانات عشرية (حوالي 10 سم) كافٍ للعرض.</p>
+      </div>
+
+      <h3 id="ws-device"><bdi dir="ltr">2.2 <code>device</code></bdi> — <span data-l="en">identity and status of each vehicle</span><span data-l="ar">هوية المركبة وحالتها</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-l="en">Field</span><span data-l="ar">الحقل</span></th><th><span data-l="en">Type</span><span data-l="ar">النوع</span></th><th><span data-l="en">Meaning</span><span data-l="ar">المعنى</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>name</code></td><td class="type">string</td>
+            <td><span data-l="en">Display name of the vehicle: usually the plate number (e.g. <code>"7650 KAR"</code>) or the fleet code (e.g. <code>"SR111"</code>).</span><span data-l="ar">اسم المركبة المعروض: غالباً رقم اللوحة (مثل <code>"7650 KAR"</code>) أو كود الأسطول (مثل <code>"SR111"</code>).</span></td></tr>
+          <tr><td><code>status</code></td><td class="type">string</td>
+            <td><span data-l="en">Current status — one of the values below.</span><span data-l="ar">الحالة الحالية — إحدى القيم في الجدول التالي.</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 id="ws-status"><bdi dir="ltr">2.3 <code>status</code></bdi> <span data-l="en">values</span><span data-l="ar">القيم</span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-l="en">Value</span><span data-l="ar">القيمة</span></th><th><span data-l="en">Meaning</span><span data-l="ar">المعنى</span></th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill online">online</span></td><td><span data-l="en">The tracking device is connected and sending data now.</span><span data-l="ar">جهاز التتبع متصل ويرسل بيانات الآن.</span></td></tr>
+          <tr><td><span class="pill parked">parked</span></td><td><span data-l="en">The device is sending data, but the vehicle is parked.</span><span data-l="ar">الجهاز يرسل بيانات لكن المركبة مركونة.</span></td></tr>
+          <tr><td><span class="pill offline">offline</span></td><td><span data-l="en">The device was connected before but is not sending data now.</span><span data-l="ar">الجهاز كان متصلاً سابقاً لكنه لا يرسل بيانات الآن.</span></td></tr>
+          <tr><td><span class="pill unknown">unknown</span></td><td><span data-l="en">No recent data from the device, so its status cannot be determined.</span><span data-l="ar">لا توجد بيانات حديثة من الجهاز، لذلك لا يمكن تحديد حالته.</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ================= ERRORS ================= -->
+    <section id="errors">
+      <h2><span data-l="en">Errors &amp; close codes</span><span data-l="ar">الأخطاء وأكواد الإغلاق</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-l="en">Case</span><span data-l="ar">الحالة</span></th><th><span data-l="en">What you get</span><span data-l="ar">ما يرجع</span></th><th><span data-l="en">What to do</span><span data-l="ar">ماذا تفعل</span></th></tr></thead>
+        <tbody>
+          <tr><td><span data-l="en">Wrong email or password</span><span data-l="ar">بريد أو كلمة مرور خاطئة</span></td>
+            <td><code>result: "error"</code> + <code>error_description</code></td>
+            <td><span data-l="en">Check the credentials, or contact Onboard.</span><span data-l="ar">تحقق من البيانات أو تواصل مع Onboard.</span></td></tr>
+          <tr><td><span data-l="en">Invalid / expired token</span><span data-l="ar">توكن غير صالح / منتهي</span></td>
+            <td><span data-l="en">WebSocket closed with code</span><span data-l="ar">إغلاق الاتصال بالكود</span> <code>4401</code></td>
+            <td><span data-l="en">Call the Login API again and reconnect with the new token.</span><span data-l="ar">استدعِ Login API من جديد وأعد الاتصال بالتوكن الجديد.</span></td></tr>
+          <tr><td><span data-l="en">Network drop / server restart</span><span data-l="ar">انقطاع الشبكة / إعادة تشغيل السيرفر</span></td>
+            <td><span data-l="en">WebSocket closed with another code (e.g. <code>1006</code>)</span><span data-l="ar">إغلاق الاتصال بكود آخر (مثل <code>1006</code>)</span></td>
+            <td><span data-l="en">Reconnect automatically after a short delay (e.g. 2s, 4s, 8s…).</span><span data-l="ar">أعد الاتصال تلقائياً بعد فترة قصيرة (مثلاً 2ث، 4ث، 8ث…).</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ================= EXAMPLES ================= -->
+    <section id="examples">
+      <h2><span data-l="en">Full examples</span><span data-l="ar">أمثلة كاملة</span></h2>
+      <p data-l="en">Login + connect + handle updates + reconnect on <code>4401</code>, in one script.</p>
+      <p data-l="ar">تسجيل دخول + اتصال + معالجة التحديثات + إعادة الاتصال عند <code>4401</code>، في سكربت واحد.</p>
+      <div class="code" data-tabs="full"></div>
+    </section>
+
+    <!-- ================= PLAYGROUND ================= -->
+    <section id="playground">
+      <h2><span data-l="en">Live Playground</span><span data-l="ar">التجربة المباشرة</span></h2>
+      <p data-l="en">Try the API from your browser. Nothing is stored — your credentials go only to <code>my.onboardsaudi.com</code>.</p>
+      <p data-l="ar">جرّب الواجهة من المتصفح مباشرة. لا يتم حفظ أي شيء — بياناتك تُرسل فقط إلى <code>my.onboardsaudi.com</code>.</p>
+
+      <div class="pg">
+        <div class="pg-step">
+          <h3><span class="badge-ver">1</span> <span data-l="en">Get a token</span><span data-l="ar">احصل على توكن</span></h3>
+          <form class="pg-grid" id="loginForm" autocomplete="off">
+            <div><label for="pgEmail">email</label><input id="pgEmail" type="email" placeholder="YOUR_EMAIL" required></div>
+            <div><label for="pgPass">password</label><input id="pgPass" type="password" placeholder="YOUR_PASSWORD" required></div>
+            <button class="btn btn-primary" id="loginBtn" type="submit"><span data-l="en">Login</span><span data-l="ar">تسجيل الدخول</span></button>
+          </form>
+          <div class="pg-msg" id="loginMsg"></div>
+        </div>
+
+        <div class="pg-step">
+          <h3><span class="badge-ver">2</span> <span data-l="en">Connect to the WebSocket</span><span data-l="ar">اتصل بالـ WebSocket</span></h3>
+          <div class="pg-grid two">
+            <div><label for="pgToken">token</label><input id="pgToken" placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOi..."></div>
+            <button class="btn btn-primary" id="connectBtn"><span data-l="en">Connect</span><span data-l="ar">اتصال</span></button>
+            <button class="btn" id="disconnectBtn" disabled><span data-l="en">Disconnect</span><span data-l="ar">قطع</span></button>
+          </div>
+          <div class="pg-msg"><span class="conn" id="connState"><i></i><span id="connText"></span></span></div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><span><span data-l="en">Vehicles</span><span data-l="ar">المركبات</span></span><strong id="stTotal">0</strong></div>
+          <div class="stat"><span style="color:var(--online)">online</span><strong id="stOnline">0</strong></div>
+          <div class="stat"><span style="color:var(--parked)">parked</span><strong id="stParked">0</strong></div>
+          <div class="stat"><span style="color:var(--offline)">offline</span><strong id="stOffline">0</strong></div>
+          <div class="stat"><span><span data-l="en">Messages</span><span data-l="ar">الرسائل</span></span><strong id="stMsgs">0</strong></div>
+        </div>
+
+        <div class="pg-panes">
+          <div class="pg-table">
+            <table>
+              <thead><tr>
+                <th>name</th><th>status</th><th>lat, lng</th><th>speed</th><th>ign / mot</th>
+              </tr></thead>
+              <tbody id="vehBody"></tbody>
+            </table>
+            <div class="empty" id="vehEmpty"><span data-l="en">Connect to see vehicles here.</span><span data-l="ar">اتصل لتظهر المركبات هنا.</span></div>
+          </div>
+          <div class="pg-log" id="pgLog"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      © Onboard · <a href="https://onboardsaudi.com" target="_blank" rel="noopener">onboardsaudi.com</a> · Live Vehicles API v1.0
+    </footer>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   Code samples — shared by both languages (code stays in English)
+   ============================================================ */
+const LOGIN_URL = 'https://my.onboardsaudi.com/backend/api/login';
+const WS_URL = 'wss://my.onboardsaudi.com/ws/';
+
+const SAMPLES = {
+  login: {
+    cURL: `curl -X POST '${LOGIN_URL}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json' \\
+  -d '{
+    "email": "YOUR_EMAIL",
+    "password": "YOUR_PASSWORD"
+  }'`,
+    JavaScript: `const res = await fetch('${LOGIN_URL}', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+  body: JSON.stringify({ email: 'YOUR_EMAIL', password: 'YOUR_PASSWORD' }),
+});
+const body = await res.json();
+
+if (body.result !== 'success') throw new Error(body.error_description);
+const token = body.data.token; // use it to open the WebSocket`,
+    Python: `import requests  # pip install requests
+
+res = requests.post(
+    "${LOGIN_URL}",
+    json={"email": "YOUR_EMAIL", "password": "YOUR_PASSWORD"},
+    headers={"Accept": "application/json"},
+)
+body = res.json()
+
+if body["result"] != "success":
+    raise Exception(body["error_description"])
+token = body["data"]["token"]  # use it to open the WebSocket`,
+  },
+  loginResponse: {
+    'JSON — 200 OK': `{
+  "result": "success",
+  "data": {
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOi...",
+    "user": {
+      "id": 4063,
+      "name": "Your Company API",
+      "email": "YOUR_EMAIL",
+      "type": 1
+    },
+    "expires_in": 31535999
+  },
+  "error_description": "",
+  "error_code": 0
+}`,
+  },
+  message: {
+    'JSON — update': `{
+  "type": "update",
+  "position": {
+    "latitude": 25.223146,
+    "longitude": 46.636590,
+    "speed": 0,
+    "motion": 0,
+    "ignition": 0
+  },
+  "device": {
+    "name": "SR133",
+    "status": "unknown"
+  }
+}`,
+  },
+  full: {
+    'JavaScript (Node 22+)': `const LOGIN_URL = '${LOGIN_URL}';
+const WS_URL = '${WS_URL}';
+
+async function login() {
+  const res = await fetch(LOGIN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email: 'YOUR_EMAIL', password: 'YOUR_PASSWORD' }),
+  });
+  const body = await res.json();
+  if (body.result !== 'success') throw new Error(body.error_description);
+  return body.data.token;
+}
+
+const vehicles = new Map(); // device.name -> latest message
+let retry = 0;
+
+async function connect(token) {
+  token ??= await login();
+  const ws = new WebSocket(WS_URL + '?token=' + encodeURIComponent(token));
+
+  ws.onopen = () => { retry = 0; console.log('connected'); };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type !== 'update') return;
+    vehicles.set(msg.device.name, msg);
+    const { latitude, longitude, speed } = msg.position;
+    console.log(msg.device.name, msg.device.status,
+      latitude.toFixed(6), longitude.toFixed(6), speed);
+  };
+
+  ws.onclose = (event) => {
+    if (event.code === 4401) return connect(); // token expired -> login again
+    const delay = Math.min(30000, 2000 * 2 ** retry++);
+    setTimeout(() => connect(token), delay);   // network drop -> retry
+  };
+}
+
+connect();`,
+    'Python (asyncio)': `import asyncio, json
+import requests                     # pip install requests websockets
+import websockets
+
+LOGIN_URL = "${LOGIN_URL}"
+WS_URL = "${WS_URL}"
+
+def login():
+    body = requests.post(
+        LOGIN_URL,
+        json={"email": "YOUR_EMAIL", "password": "YOUR_PASSWORD"},
+        headers={"Accept": "application/json"},
+    ).json()
+    if body["result"] != "success":
+        raise Exception(body["error_description"])
+    return body["data"]["token"]
+
+async def main():
+    vehicles = {}  # device.name -> latest message
+    token = login()
+    retry = 0
+    while True:
+        try:
+            async with websockets.connect(f"{WS_URL}?token={token}") as ws:
+                retry = 0
+                async for raw in ws:
+                    msg = json.loads(raw)
+                    if msg.get("type") != "update":
+                        continue
+                    name = msg["device"]["name"]
+                    vehicles[name] = msg
+                    p = msg["position"]
+                    print(name, msg["device"]["status"],
+                          round(p["latitude"], 6), round(p["longitude"], 6), p["speed"])
+        except websockets.ConnectionClosed as e:
+            if e.rcvd and e.rcvd.code == 4401:
+                token = login()  # token expired -> login again
+                continue
+        await asyncio.sleep(min(30, 2 * 2 ** retry))
+        retry += 1
+
+asyncio.run(main())`,
+  },
+};
+
+/* Tiny syntax highlighter: escape first, then wrap tokens in spans */
+function highlight(code) {
+  const esc = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc.replace(
+    /(\/\/[^\n]*|#[^\n{]*$|#\s[^\n]*)|("(?:[^"\\]|\\.)*"(\s*:)?|'(?:[^'\\]|\\.)*'|`[^`]*`)|\b(\d+(?:\.\d+)?)\b|\b(const|let|await|async|function|return|if|import|from|def|async|while|True|for|in|try|except|continue|raise|new|throw)\b/gm,
+    (m, com, str, colon, num, kw) => {
+      if (com) return `<span class="tok-c">${com}</span>`;
+      if (str) return colon ? `<span class="tok-k">${str}</span>` : `<span class="tok-s">${str}</span>`;
+      if (num) return `<span class="tok-n">${num}</span>`;
+      if (kw) return `<span class="tok-k">${kw}</span>`;
+      return m;
+    }
+  );
+}
+
+function copyText(text, btn) {
+  navigator.clipboard?.writeText(text).then(() => {
+    const old = btn.innerHTML;
+    btn.textContent = document.documentElement.lang === 'ar' ? 'تم النسخ ✓' : 'Copied ✓';
+    setTimeout(() => (btn.innerHTML = old), 1400);
+  });
+}
+
+/* Build every <div class="code" data-tabs="..."> from SAMPLES */
+document.querySelectorAll('.code[data-tabs]').forEach((box) => {
+  const group = SAMPLES[box.dataset.tabs];
+  const names = Object.keys(group);
+  let current = names[0];
+
+  const head = document.createElement('div');
+  head.className = 'code-head';
+  const pre = document.createElement('pre');
+
+  const render = () => {
+    pre.innerHTML = highlight(group[current]);
+    head.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.name === current));
+  };
+
+  names.forEach((name) => {
+    const el = document.createElement(names.length > 1 ? 'button' : 'span');
+    el.className = names.length > 1 ? 'tab' : 'label';
+    el.dataset.name = name;
+    el.textContent = name;
+    if (names.length > 1) el.onclick = () => { current = name; render(); };
+    head.appendChild(el);
+  });
+
+  const copy = document.createElement('button');
+  copy.className = 'copy';
+  copy.innerHTML = '<span data-l="en">Copy</span><span data-l="ar">نسخ</span>';
+  copy.onclick = () => copyText(group[current], copy);
+  head.appendChild(copy);
+
+  box.append(head, pre);
+  render();
+});
+
+document.querySelectorAll('[data-copy]').forEach((btn) => {
+  btn.onclick = () => copyText(btn.dataset.copy, btn);
+});
+
+/* ============================================================
+   Language + theme (remembered per browser)
+   ============================================================ */
+const root = document.documentElement;
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+
+function setLang(lang) {
+  root.lang = lang;
+  root.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  store.set('docs-lang', lang);
+}
+setLang(store.get('docs-lang') || (navigator.language?.startsWith('ar') ? 'ar' : 'en'));
+document.getElementById('langBtn').onclick = () => {
+  setLang(root.lang === 'ar' ? 'en' : 'ar');
+  renderConn(); // the playground status text is built in JS, so re-render it
+};
+
+const savedTheme = store.get('docs-theme');
+if (savedTheme) root.dataset.theme = savedTheme;
+document.getElementById('themeBtn').onclick = () => {
+  const dark = root.dataset.theme
+    ? root.dataset.theme === 'dark'
+    : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  store.set('docs-theme', root.dataset.theme);
+};
+
+/* ============================================================
+   Sidebar: mobile toggle + highlight the section in view
+   ============================================================ */
+document.getElementById('menuBtn').onclick = () => document.body.classList.toggle('nav-open');
+const navLinks = [...document.querySelectorAll('.sidebar a')];
+navLinks.forEach((a) => a.addEventListener('click', () => document.body.classList.remove('nav-open')));
+
+const targets = navLinks.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const spy = new IntersectionObserver((entries) => {
+  entries.forEach((e) => {
+    if (!e.isIntersecting) return;
+    navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
+  });
+}, { rootMargin: '-70px 0px -70% 0px' });
+targets.forEach((t) => spy.observe(t));
+
+/* ============================================================
+   Playground
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const T = (en, ar) => (root.lang === 'ar' ? ar : en);
+let ws = null;
+let connStatus = 'idle';
+let msgCount = 0;
+const vehicles = new Map(); // device.name -> { msg, row }
+
+function renderConn(detail) {
+  const labels = {
+    idle: T('Not connected', 'غير متصل'),
+    connecting: T('Connecting…', 'جاري الاتصال…'),
+    open: T('Connected — waiting for updates', 'متصل — بانتظار التحديثات'),
+    closed: T('Disconnected', 'تم قطع الاتصال'),
+    expired: T('Closed with 4401: token invalid or expired — log in again', 'أُغلق بالكود 4401: التوكن غير صالح أو منتهي — سجّل الدخول من جديد'),
+  };
+  if (detail !== undefined) renderConn.detail = detail;
+  const el = $('connState');
+  el.className = 'conn' + (connStatus === 'open' ? ' on' : connStatus === 'expired' ? ' err' : '');
+  $('connText').textContent = labels[connStatus] + (renderConn.detail ? ' ' + renderConn.detail : '');
+}
+
+function log(text) {
+  const box = $('pgLog');
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="t">${new Date().toLocaleTimeString('en-GB')}</span> `;
+  line.append(text);
+  box.prepend(line);
+  while (box.children.length > 200) box.lastChild.remove();
+}
+
+function updateStats() {
+  const counts = { online: 0, parked: 0, offline: 0 };
+  vehicles.forEach(({ msg }) => { if (msg.device.status in counts) counts[msg.device.status]++; });
+  $('stTotal').textContent = vehicles.size;
+  $('stOnline').textContent = counts.online;
+  $('stParked').textContent = counts.parked;
+  $('stOffline').textContent = counts.offline;
+  $('stMsgs').textContent = msgCount;
+  $('vehEmpty').style.display = vehicles.size ? 'none' : '';
+}
+
+function upsertVehicle(msg) {
+  const name = msg.device?.name ?? '—';
+  let entry = vehicles.get(name);
+  if (!entry) {
+    const row = document.createElement('tr');
+    $('vehBody').appendChild(row);
+    entry = { row };
+    vehicles.set(name, entry);
+  }
+  entry.msg = msg;
+  const p = msg.position || {};
+  const status = msg.device?.status || 'unknown';
+  const fix = (n) => (typeof n === 'number' ? n.toFixed(6) : '—');
+  entry.row.innerHTML = `
+    <td><strong></strong></td>
+    <td><span class="pill ${['online', 'parked', 'offline'].includes(status) ? status : 'unknown'}"></span></td>
+    <td class="num">${fix(p.latitude)}, ${fix(p.longitude)}</td>
+    <td class="num">${p.speed ?? '—'}</td>
+    <td class="num">${p.ignition ?? '—'} / ${p.motion ?? '—'}</td>`;
+  entry.row.querySelector('strong').textContent = name;   // textContent: never inject server text as HTML
+  entry.row.querySelector('.pill').textContent = status;
+  entry.row.classList.remove('flash'); void entry.row.offsetWidth; entry.row.classList.add('flash');
+}
+
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('loginMsg');
+  $('loginBtn').disabled = true;
+  msg.className = 'pg-msg';
+  msg.textContent = T('Logging in…', 'جاري تسجيل الدخول…');
+  try {
+    const res = await fetch(LOGIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ email: $('pgEmail').value.trim(), password: $('pgPass').value }),
+    });
+    const body = await res.json();
+    if (body.result !== 'success') throw new Error(body.error_description || 'Login failed');
+    $('pgToken').value = body.data.token;
+    $('pgPass').value = '';
+    msg.className = 'pg-msg ok';
+    msg.textContent = T(`Logged in as ${body.data.user?.name ?? ''}. Token is ready in step 2.`, `تم الدخول باسم ${body.data.user?.name ?? ''}. التوكن جاهز في الخطوة 2.`);
+  } catch (err) {
+    msg.className = 'pg-msg err';
+    msg.textContent = err instanceof TypeError
+      ? T('The browser could not reach the Login API (network or CORS). Get the token with cURL and paste it in step 2.', 'المتصفح لم يستطع الوصول إلى Login API (شبكة أو CORS). احصل على التوكن عبر cURL والصقه في الخطوة 2.')
+      : err.message;
+  } finally {
+    $('loginBtn').disabled = false;
+  }
+});
+
+$('connectBtn').onclick = () => {
+  const token = $('pgToken').value.trim();
+  if (!token) { $('pgToken').focus(); return; }
+  ws?.close();
+  vehicles.clear(); $('vehBody').innerHTML = ''; msgCount = 0; updateStats();
+
+  connStatus = 'connecting'; renderConn('');
+  $('connectBtn').disabled = true; $('disconnectBtn').disabled = false;
+  log(`connect ${WS_URL}?token=${token.slice(0, 12)}…`);
+
+  const socket = new WebSocket(WS_URL + '?token=' + encodeURIComponent(token));
+  ws = socket;
+  socket.onopen = () => { connStatus = 'open'; renderConn(''); log('open'); };
+  socket.onmessage = (ev) => {
+    msgCount++;
+    log(ev.data.length > 400 ? ev.data.slice(0, 400) + '…' : ev.data);
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'update') upsertVehicle(msg);
+    } catch { /* non-JSON message: only shown in the log */ }
+    updateStats();
+  };
+  socket.onclose = (ev) => {
+    if (ws !== socket) return;
+    connStatus = ev.code === 4401 ? 'expired' : 'closed';
+    renderConn(ev.code === 4401 ? '' : `(code ${ev.code})`);
+    log(`close code=${ev.code}${ev.reason ? ' reason=' + ev.reason : ''}`);
+    $('connectBtn').disabled = false; $('disconnectBtn').disabled = true;
+    ws = null;
+  };
+};
+
+$('disconnectBtn').onclick = () => ws?.close(1000);
+renderConn('');
+updateStats();
+</script>
+</body>
+</html>
