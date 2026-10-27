@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
   /* ---------- Design tokens (light) ---------- */
   :root {
@@ -168,6 +170,13 @@
   .pg-log { max-height: 380px; overflow: auto; background: var(--code-bg); color: var(--code-text); font: 12px/1.55 var(--mono); padding: 10px 12px; direction: ltr; }
   .pg-log div { white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid #1c2a26; padding: 4px 0; }
   .pg-log .t { color: var(--code-com); }
+  .pg-map-wrap { position: relative; border-bottom: 1px solid var(--border); }
+  .pg-map { height: 420px; }
+  .pg-map-wrap .fit-btn { position: absolute; top: 10px; left: 10px; z-index: 2; box-shadow: var(--shadow); }
+  .car { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); background: var(--unknown); cursor: pointer; }
+  .car.online { background: var(--online); } .car.parked { background: var(--parked); } .car.offline { background: var(--offline); }
+  .maplibregl-popup-content { font: 13px/1.5 var(--font); color: #15201d; padding: 10px 12px; }
+  .maplibregl-popup-content b { display: block; font-size: 14px; margin-bottom: 2px; }
   .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
 
   footer { color: var(--text-muted); font-size: 13px; padding-top: 10px; }
@@ -499,6 +508,11 @@
           <div class="stat"><span style="color:var(--parked)">parked</span><strong id="stParked">0</strong></div>
           <div class="stat"><span style="color:var(--offline)">offline</span><strong id="stOffline">0</strong></div>
           <div class="stat"><span><span data-l="en">Messages</span><span data-l="ar">الرسائل</span></span><strong id="stMsgs">0</strong></div>
+        </div>
+
+        <div class="pg-map-wrap" dir="ltr">
+          <div class="pg-map" id="pgMap"></div>
+          <button class="btn fit-btn" id="fitBtn"><span data-l="en">Show all vehicles</span><span data-l="ar">عرض كل المركبات</span></button>
         </div>
 
         <div class="pg-panes">
@@ -841,7 +855,7 @@ function upsertVehicle(msg) {
   const status = msg.device?.status || 'unknown';
   const fix = (n) => (typeof n === 'number' ? n.toFixed(6) : '—');
   entry.row.innerHTML = `
-    <td><strong></strong></td>
+    <td><bdi><strong></strong></bdi></td>
     <td><span class="pill ${['online', 'parked', 'offline'].includes(status) ? status : 'unknown'}"></span></td>
     <td class="num">${fix(p.latitude)}, ${fix(p.longitude)}</td>
     <td class="num">${p.speed ?? '—'}</td>
@@ -849,6 +863,55 @@ function upsertVehicle(msg) {
   entry.row.querySelector('strong').textContent = name;   // textContent: never inject server text as HTML
   entry.row.querySelector('.pill').textContent = status;
   entry.row.classList.remove('flash'); void entry.row.offsetWidth; entry.row.classList.add('flash');
+  updateMarker(entry, name, status, p);
+}
+
+/* ============================================================
+   Map: one MapLibre marker per vehicle (keyed by device.name)
+   ============================================================ */
+const map = window.maplibregl && new maplibregl.Map({
+  container: 'pgMap',
+  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json', // free, no API key
+  center: [46.695, 24.7136], // Riyadh
+  zoom: 5,
+  attributionControl: { compact: true },
+});
+map?.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+let fitted = false;
+
+function updateMarker(entry, name, status, p) {
+  if (!map || typeof p.latitude !== 'number' || typeof p.longitude !== 'number') return;
+  const lngLat = [p.longitude, p.latitude]; // MapLibre wants [lng, lat], not [lat, lng]
+
+  if (!entry.marker) {
+    const el = document.createElement('div');
+    entry.popup = new maplibregl.Popup({ offset: 12, closeButton: false });
+    entry.marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).setPopup(entry.popup).addTo(map);
+  }
+  entry.marker.getElement().className = 'car ' + status;
+  entry.marker.setLngLat(lngLat);
+
+  const box = document.createElement('div'); // built with textContent: server text is never parsed as HTML
+  const title = document.createElement('b');
+  title.textContent = name;
+  box.append(title, `${status} · ${p.speed ?? 0} km/h · ign ${p.ignition ?? '—'} / mot ${p.motion ?? '—'}`);
+  entry.popup.setDOMContent(box);
+
+  // Zoom to the fleet once, after the first burst of messages has arrived
+  if (!fitted) { fitted = true; setTimeout(fitAll, 1500); }
+}
+
+function fitAll() {
+  if (!map) return;
+  const bounds = new maplibregl.LngLatBounds();
+  vehicles.forEach(({ marker }) => marker && bounds.extend(marker.getLngLat()));
+  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
+}
+$('fitBtn').onclick = fitAll;
+
+function clearMarkers() {
+  vehicles.forEach(({ marker }) => marker?.remove());
+  fitted = false;
 }
 
 $('loginForm').addEventListener('submit', async (e) => {
@@ -883,6 +946,7 @@ $('connectBtn').onclick = () => {
   const token = $('pgToken').value.trim();
   if (!token) { $('pgToken').focus(); return; }
   ws?.close();
+  clearMarkers();
   vehicles.clear(); $('vehBody').innerHTML = ''; msgCount = 0; updateStats();
 
   connStatus = 'connecting'; renderConn('');
