@@ -39,17 +39,7 @@
     --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
     color-scheme: light;
   }
-  /* ---------- Dark mode ---------- */
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --brand: #3fb59f; --brand-strong: #6fd0bd; --brand-soft: #143029;
-      --bg: #0d1412; --bg-alt: #111a17; --surface: #141e1b; --border: #24332e;
-      --text: #e3ece9; --text-muted: #93a6a0; --code-bg: #08100d;
-      --post: #3cc985; --ws: #a48cff;
-      --online: #3cc985; --parked: #6ea1ff; --offline: #f07a6e; --unknown: #9aa29f;
-      --shadow: none; color-scheme: dark;
-    }
-  }
+  /* ---------- Dark mode (opt-in only: light is the default) ---------- */
   :root[data-theme="dark"] {
     --brand: #3fb59f; --brand-strong: #6fd0bd; --brand-soft: #143029;
     --bg: #0d1412; --bg-alt: #111a17; --surface: #141e1b; --border: #24332e;
@@ -764,7 +754,7 @@ function setLang(lang) {
   root.dir = lang === 'ar' ? 'rtl' : 'ltr';
   store.set('docs-lang', lang);
 }
-setLang(store.get('docs-lang') || (navigator.language?.startsWith('ar') ? 'ar' : 'en'));
+setLang(store.get('docs-lang') || 'ar');
 document.getElementById('langBtn').onclick = () => {
   setLang(root.lang === 'ar' ? 'en' : 'ar');
   renderConn(); // the playground status text is built in JS, so re-render it
@@ -773,10 +763,7 @@ document.getElementById('langBtn').onclick = () => {
 const savedTheme = store.get('docs-theme');
 if (savedTheme) root.dataset.theme = savedTheme;
 document.getElementById('themeBtn').onclick = () => {
-  const dark = root.dataset.theme
-    ? root.dataset.theme === 'dark'
-    : matchMedia('(prefers-color-scheme: dark)').matches;
-  root.dataset.theme = dark ? 'light' : 'dark';
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
   store.set('docs-theme', root.dataset.theme);
 };
 
